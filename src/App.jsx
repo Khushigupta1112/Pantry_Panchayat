@@ -36,6 +36,8 @@ const CATEGORY_EMOJI = {
   Others: "📦",
 };
 
+const ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022";
+
 const FUNNY_TAGLINES = [
   "Let the pantry decide, not the fight.",
   "Where dal meets democracy.",
@@ -96,6 +98,109 @@ async function saveData(payload) {
     /* fall through */
   }
   localStorage.setItem(STORAGE_KEY, json);
+}
+
+function generateLocalFallbackVerdicts(inventory = [], mealType = "Dinner", prefText = "") {
+  const findItem = (sub) => inventory.find((i) => i.name.toLowerCase().includes(sub.toLowerCase()));
+
+  const rice = findItem("rice");
+  const atta = findItem("atta") || findItem("wheat");
+  const dal = findItem("dal") || findItem("toor");
+  const onion = findItem("onion");
+  const tomato = findItem("tomato");
+  const potato = findItem("potato");
+  const paneer = findItem("paneer");
+  const egg = findItem("egg");
+  const oil = findItem("oil");
+
+  const dishes = [];
+
+  if (dal || rice) {
+    dishes.push({
+      name: "Classic Dal Khichdi & Salad",
+      cuisine: "North Indian Comfort",
+      timeMinutes: 25,
+      description: "The supreme council approves khichdi: simple, comforting, and saves half your pantry.",
+      ingredientsUsed: [
+        ...(dal ? [{ name: dal.name, qty: Math.min(100, dal.quantity), unit: dal.unit }] : []),
+        ...(rice ? [{ name: rice.name, qty: Math.min(150, rice.quantity), unit: rice.unit }] : []),
+        ...(onion ? [{ name: onion.name, qty: 1, unit: onion.unit }] : []),
+      ],
+      extraNeeded: ["Cumin seeds", "Ghee (optional)"],
+    });
+  }
+
+  if (egg) {
+    dishes.push({
+      name: "Desi Masala Egg Bhurji",
+      cuisine: "Street Food",
+      timeMinutes: 15,
+      description: "Quick, spicy, protein-packed. The council orders extra onions for crunch.",
+      ingredientsUsed: [
+        { name: egg.name, qty: Math.min(3, egg.quantity), unit: egg.unit },
+        ...(onion ? [{ name: onion.name, qty: 1, unit: onion.unit }] : []),
+        ...(tomato ? [{ name: tomato.name, qty: 1, unit: tomato.unit }] : []),
+      ],
+      extraNeeded: ["Green chillies", "Coriander"],
+    });
+  }
+
+  if (paneer) {
+    dishes.push({
+      name: "Quick Homestyle Paneer Bhurji",
+      cuisine: "North Indian",
+      timeMinutes: 20,
+      description: "Rich and quick. The Panchayat declares paneer duty a privilege, not a chore.",
+      ingredientsUsed: [
+        { name: paneer.name, qty: Math.min(150, paneer.quantity), unit: paneer.unit },
+        ...(onion ? [{ name: onion.name, qty: 1, unit: onion.unit }] : []),
+        ...(tomato ? [{ name: tomato.name, qty: 1, unit: tomato.unit }] : []),
+      ],
+      extraNeeded: ["Garam masala"],
+    });
+  }
+
+  if (potato) {
+    dishes.push({
+      name: "Jeera Aloo Fry",
+      cuisine: "Indian Home",
+      timeMinutes: 18,
+      description: "Crispy potatoes in basic spices. Zero drama, 100% satisfaction.",
+      ingredientsUsed: [
+        { name: potato.name, qty: Math.min(3, potato.quantity), unit: potato.unit },
+        ...(oil ? [{ name: oil.name, qty: Math.min(0.02, oil.quantity), unit: oil.unit }] : []),
+      ],
+      extraNeeded: ["Cumin seeds", "Red chilli powder"],
+    });
+  }
+
+  if (atta) {
+    dishes.push({
+      name: "Fresh Phulkas with Aloo Subzi",
+      cuisine: "Indian Staples",
+      timeMinutes: 30,
+      description: "Classic roommate fuel. Roll rotis together to avoid dishes drama.",
+      ingredientsUsed: [
+        { name: atta.name, qty: Math.min(200, atta.quantity), unit: atta.unit },
+        ...(potato ? [{ name: potato.name, qty: Math.min(2, potato.quantity), unit: potato.unit }] : []),
+      ],
+      extraNeeded: ["Water for dough"],
+    });
+  }
+
+  while (dishes.length < 3) {
+    const item1 = inventory[dishes.length % Math.max(1, inventory.length)] || { name: "Pantry item", quantity: 1, unit: "pcs" };
+    dishes.push({
+      name: `Special ${item1.name} Verdict`,
+      cuisine: "Roommate Fusion",
+      timeMinutes: 20,
+      description: "Creative kitchen experiment approved by the Panchayat council.",
+      ingredientsUsed: [{ name: item1.name, qty: Math.min(1, item1.quantity || 1), unit: item1.unit || "pcs" }],
+      extraNeeded: ["Basic spices"],
+    });
+  }
+
+  return dishes.slice(0, 3);
 }
 
 export default function PantryPanchayat() {
@@ -240,6 +345,12 @@ export default function PantryPanchayat() {
   }
 
   async function askPanchayat() {
+    if (inventory.length === 0) {
+      showToast("Pantry is empty! Loading demo items so the council can deliver verdicts.", "info");
+      loadDemoPantry();
+      return;
+    }
+
     setAiLoading(true);
     setAiError(null);
     setSuggestions(null);
@@ -247,27 +358,48 @@ export default function PantryPanchayat() {
     try {
       const list = inventory.map((i) => `${i.name}: ${i.quantity}${i.unit}`).join(", ");
       const system = `You are the "Pantry Panchayat", a witty but practical food-decision council for roommates sharing a kitchen in India. Given their pantry inventory, propose exactly 3 different dishes they could cook using mainly what they already have. Respond with ONLY a raw JSON array - no markdown fences, no commentary, nothing before or after it. Each element must match this shape exactly: {"name": string, "cuisine": string, "timeMinutes": number, "description": string (max 20 words, witty judge-like tone), "ingredientsUsed": [{"name": string, "qty": number, "unit": string}], "extraNeeded": [string]}. For ingredientsUsed, use item names EXACTLY as given in the pantry list, with the same unit, and realistic quantities. Anything the dish needs that is not in the pantry goes into extraNeeded as a short string instead, not into ingredientsUsed. Prefer dishes that need little or nothing extra.`;
-      const userMsg = `Pantry inventory:\n${list || "empty pantry"}\n\nMeal type: ${mealType}\nPreferences: ${
+      const userMsg = `Pantry inventory:\n${list}\n\nMeal type: ${mealType}\nPreferences: ${
         prefText.trim() || "none"
       }\n\nDeliver 3 verdicts now.`;
       const response = await fetch("/api/panchayat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: ANTHROPIC_MODEL,
           max_tokens: 1000,
           system,
           messages: [{ role: "user", content: userMsg }],
         }),
       });
-      const data = await response.json();
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const errObj = data?.error;
+        const message =
+          (typeof errObj === "string" ? errObj : errObj?.message) ||
+          data?.message ||
+          "The panchayat couldn't reach a verdict just now.";
+
+        if (errObj?.isMissingKey || response.status === 400 || response.status === 401) {
+          console.warn("Anthropic API key issue, switching to local verdict generator:", message);
+          const fallback = generateLocalFallbackVerdicts(inventory, mealType, prefText);
+          setSuggestions(fallback);
+          showToast("Using local Panchayat Verdict Generator (Set ANTHROPIC_API_KEY in .env.local for Claude AI)", "info");
+          return;
+        }
+        throw new Error(message);
+      }
+
       const text = (data.content || []).map((b) => b.text || "").join("");
       const cleaned = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(cleaned);
-      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("bad shape");
+      if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("The model returned an empty verdict set.");
       setSuggestions(parsed);
-    } catch {
-      setAiError("The panchayat couldn't reach a verdict just now. Try again in a moment.");
+    } catch (error) {
+      console.error("panchayat request failed", error);
+      const fallback = generateLocalFallbackVerdicts(inventory, mealType, prefText);
+      setSuggestions(fallback);
+      setAiError(error?.message || "Using local Panchayat verdict generator.");
     } finally {
       setAiLoading(false);
     }
@@ -745,8 +877,9 @@ function CookTab({
         </div>
         <button
           onClick={askPanchayat}
-          disabled={aiLoading || inventory.length === 0}
-          className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed text-stone-900 rounded-lg px-5 py-2.5 text-sm font-bold whitespace-nowrap transition-all hover:scale-[1.03] active:scale-95 shadow-lg shadow-amber-500/25"
+          disabled={aiLoading}
+          type="button"
+          className="flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 text-stone-900 rounded-lg px-5 py-2.5 text-sm font-bold whitespace-nowrap transition-all hover:scale-[1.03] active:scale-95 shadow-lg shadow-amber-500/25 cursor-pointer"
         >
           <Sparkles className={`w-4 h-4 ${aiLoading ? "animate-spin-slow" : ""}`} />
           {aiLoading ? "Deliberating…" : "Ask the Panchayat"}
