@@ -29,9 +29,9 @@ function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
-export default function PantryPanchayat() {
+export default function PantryPanchayat() {}
   const [loaded, setLoaded] = useState(false);
-  const [roommates, setRoommates] = useState(["Aman", "Rehan"]);
+  const [roommates, setRoommates] = useState(["Khushi", "Trisha"]);
   const [inventory, setInventory] = useState([]);
   const [history, setHistory] = useState([]);
   const [shoppingExtras, setShoppingExtras] = useState([]);
@@ -46,7 +46,7 @@ export default function PantryPanchayat() {
   const [aiError, setAiError] = useState(null);
   const [suggestions, setSuggestions] = useState(null);
   const [confirmIndex, setConfirmIndex] = useState(null);
-  const [confirmCook, setConfirmCook] = useState("Aman");
+  const [confirmCook, setConfirmCook] = useState("Khushi");
 
   const [spinning, setSpinning] = useState(false);
   const [spinResult, setSpinResult] = useState(null);
@@ -60,7 +60,7 @@ export default function PantryPanchayat() {
         const res = await window.storage.get(STORAGE_KEY, true);
         if (res && res.value) {
           const parsed = JSON.parse(res.value);
-          setRoommates(parsed.roommates || ["Aman", "Rehan"]);
+          setRoommates(parsed.roommates || ["Khushi", "Trisha"]);
           setInventory(parsed.inventory || []);
           setHistory(parsed.history || []);
           setShoppingExtras(parsed.shoppingExtras || []);
